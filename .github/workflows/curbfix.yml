@@ -1,0 +1,157 @@
+name: curbfix
+
+# Runs on every pull request that targets main.
+#
+#   Tool 1  src/detect.ts   Playwright + axe-core  -> finds the violations
+#   Tool 2  src/fix.ts      Gemma 4                -> receives them, rewrites the files
+#   (loop)  back to Tool 1 until it reports nothing left to fix (or MAX_ITERATIONS)
+#   Tool 3  src/comment.ts  GitHub API             -> posts the before/after on the PR
+on:
+    pull_request:
+        branches: [main]
+        types: [opened, synchronize, reopened]
+
+# Least privilege: read the code, write only PR comments.
+permissions:
+    contents: read
+    pull-requests: write
+
+# A new push to the same PR cancels the older (now stale) run.
+concurrency:
+    group: curbfix-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+env:
+    APP_DIR: demo-app
+    APP_PORT: "4173"
+    OUT_DIR: curbfix-out
+    MAX_ITERATIONS: "3"
+
+jobs:
+    audit:
+        name: Detect, fix, verify
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        # PRs from forks get no secrets (no GEMINI_API_KEY), so skip them.
+        if: github.event.pull_request.head.repo.full_name == github.repository
+
+        steps:
+            - name: Checkout PR branch
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # needed to diff against main and find the changed files
+
+            - name: Set up Node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+                  cache-dependency-path: |
+                      package-lock.json
+                      ${{ env.APP_DIR }}/package-lock.json
+
+            - name: Install bot dependencies
+              run: npm ci
+
+            - name: Install app dependencies
+              run: npm ci
+              working-directory: ${{ env.APP_DIR }}
+
+            - name: Install Chromium
+              run: npx playwright install --with-deps chromium
+
+            # ---------------------------------------------------------------
+            # The loop. Contract between the tools:
+            #   detect.ts  exit 0 -> nothing to fix        (loop ends, success)
+            #              exit 2 -> violations found      (written to violations.json)
+            #              other  -> real error            (workflow fails)
+            #   fix.ts     reads violations.json (+ earlier attempts in $OUT_DIR/history)
+            #              and edits the changed files in the working tree
+            # ---------------------------------------------------------------
+            - name: Detect -> Gemma 4 fix -> re-detect loop
+              id: loop
+              env:
+                  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+                  BASE_REF: origin/${{ github.base_ref }}
+              run: |
+                  set -uo pipefail
+                  mkdir -p "$OUT_DIR/history"
+                  status="clean"
+
+                  # Build the app, serve it, run Tool 1, stop the server.
+                  # Returns detect.ts's exit code.
+                  run_detect() {
+                    local label="$1"
+                    (cd "$APP_DIR" && npm run build) || return 1
+                    (cd "$APP_DIR" && npx vite preview --port "$APP_PORT" --strictPort) \
+                      > "$OUT_DIR/preview.log" 2>&1 &
+                    local server=$!
+                    npx wait-on "http://localhost:$APP_PORT" --timeout 30000 || { kill $server; return 1; }
+                    npx tsx src/detect.ts \
+                      --url "http://localhost:$APP_PORT" \
+                      --out "$OUT_DIR/violations.json" \
+                      --screenshot "$OUT_DIR/$label.png"
+                    local code=$?
+                    kill $server 2>/dev/null
+                    wait $server 2>/dev/null
+                    return $code
+                  }
+
+                  for i in $(seq 1 "$MAX_ITERATIONS"); do
+                    echo "::group::Iteration $i - Tool 1 (detect)"
+                    run_detect "iteration-$i"
+                    code=$?
+                    echo "::endgroup::"
+
+                    [ "$i" -eq 1 ] && cp "$OUT_DIR/violations.json" "$OUT_DIR/violations-initial.json" 2>/dev/null
+
+                    if [ "$code" -eq 0 ]; then
+                      echo "Tool 1 found nothing left to fix after $((i-1)) fix round(s)."
+                      status="clean"; break
+                    elif [ "$code" -ne 2 ]; then
+                      echo "::error::Tool 1 (detect) failed with exit code $code"
+                      exit "$code"
+                    fi
+
+                    cp "$OUT_DIR/violations.json" "$OUT_DIR/history/violations-$i.json"
+
+                    echo "::group::Iteration $i - Tool 2 (Gemma 4 fix)"
+                    npx tsx src/fix.ts \
+                      --violations "$OUT_DIR/violations.json" \
+                      --history "$OUT_DIR/history" \
+                      --base "$BASE_REF" \
+                      --app "$APP_DIR" \
+                      --out "$OUT_DIR/fixes-$i.json"
+                    fix_code=$?
+                    echo "::endgroup::"
+                    [ "$fix_code" -ne 0 ] && { echo "::warning::Tool 2 (fix) exited $fix_code"; status="unverified"; break; }
+
+                    # Last allowed round: one more detect to see if the final fix worked.
+                    if [ "$i" -eq "$MAX_ITERATIONS" ]; then
+                      run_detect "final"
+                      [ $? -eq 0 ] && status="clean" || status="unverified"
+                    fi
+                  done
+
+                  echo "status=$status" >> "$GITHUB_OUTPUT"
+
+            # Tool 3: always runs, so the PR gets a comment even when the loop gave up.
+            - name: Post / update PR comment
+              if: always() && steps.loop.outcome != 'skipped'
+              run: >-
+                  npx tsx src/comment.ts
+                  --dir "$OUT_DIR"
+                  --status "${{ steps.loop.outputs.status || 'error' }}"
+                  --pr "${{ github.event.pull_request.number }}"
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GITHUB_REPOSITORY: ${{ github.repository }}
+
+            - name: Upload screenshots and logs
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: curbfix-debug
+                  path: ${{ env.OUT_DIR }}/
+                  if-no-files-found: ignore
+                  retention-days: 7
