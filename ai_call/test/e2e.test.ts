@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { FixesFile, OutOfScopeFile, toJson, type ViolationsFile } from "../src/lib/schema.ts";
+import { FixesFile, OutOfScopeFile, toJson, type DetectOutput } from "../src/lib/schema.ts";
 import { makeRepo } from "./helpers.ts";
 
 const BOT = resolve(import.meta.dirname, "..");
@@ -22,22 +22,26 @@ const APP_TSX = `export function App() {
 }
 `;
 
-const violations: ViolationsFile = {
-  urls: ["http://localhost:4173/"],
+// Exactly what Detect/src/detect.ts writes (DetectOutput in Detect/src/types.ts).
+const violations: DetectOutput = {
+  url: "http://localhost:4173/",
+  scannedAt: "2026-10-17T12:00:00.000Z",
   violations: [
     {
       ruleId: "image-alt",
       impact: "critical",
       help: "Images must have alternate text",
-      helpUrl: "https://dequeuniversity.com/rules/axe/4.10/image-alt",
-      nodes: [{ target: ["img.hero-image"], html: '<img src="/hero.png" class="hero-image">', failureSummary: "no alt", fingerprint: "image-alt|img.hero-image" }],
+      html: '<img src="/hero.png" class="hero-image">',
+      target: ["img.hero-image"],
+      failureSummary: "no alt",
     },
     {
       ruleId: "link-name",
       impact: "serious",
       help: "Links must have discernible text",
-      helpUrl: "https://dequeuniversity.com/rules/axe/4.10/link-name",
-      nodes: [{ target: ["footer a.social"], html: '<a class="social" href="https://x.example"></a>', failureSummary: "no text", fingerprint: "link-name|footer a.social" }],
+      html: '<a class="social" href="https://x.example"></a>',
+      target: ["footer a.social"],
+      failureSummary: "no text",
     },
   ],
 };

@@ -82,4 +82,21 @@ describe("buildFixPrompt", () => {
     expect(r).toContain('"rationale"');
     expect(r).not.toContain("Call the `propose_edits` function");
   });
+
+  test("includes measured contrast data, and only known scalar keys", () => {
+    const p = buildFixPrompt({
+      violations: [
+        {
+          ...violation,
+          ruleId: "color-contrast",
+          data: { fgColor: "#aaaaaa", bgColor: "#ffffff", contrastRatio: 2.32, expectedContrastRatio: "4.5:1", messageKey: { x: 1 } },
+        },
+      ],
+      files: [file],
+      mode: "function",
+      nonce: "n",
+    });
+    expect(p.user).toContain("fgColor: #aaaaaa\nbgColor: #ffffff\ncontrastRatio: 2.32\nexpectedContrastRatio: 4.5:1");
+    expect(p.user).not.toContain("messageKey");
+  });
 });

@@ -19,8 +19,8 @@ import type { SourceFile } from "./lib/mapping.ts";
 import {
   FixesFile,
   OutOfScopeFile,
-  ViolationsFile,
   readJson,
+  readViolationsFile,
   toJson,
   type FixRecord,
   type OutOfScopeEntry,
@@ -104,7 +104,7 @@ async function main(): Promise<number> {
   const appDir = resolve(cwd, args.app);
   const round = roundFromPath(outPath) ?? (await nextRound(outDir));
 
-  const violations = await readJson(resolve(cwd, args.violations), ViolationsFile);
+  const violations = await readViolationsFile(resolve(cwd, args.violations));
   const outOfScopePath = join(outDir, "out-of-scope.json");
   const knownOutOfScope = await readOutOfScope(outOfScopePath);
   const history = await loadHistory({ outDir, historyDir: resolve(cwd, args.history), currentRound: round });

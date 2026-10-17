@@ -125,6 +125,54 @@ SDK facts verified in the installed types:
   fatal stop), merges `out-of-scope.json`, prints the round diff in `::group::`,
   appends a summary to `$GITHUB_STEP_SUMMARY`. Exit 0, or 1 on fatal/config errors.
 
+## Team repo integration (2026-10-17)
+
+The team merged `Detect/` (Tool 1), `Comment/` (Tool 3) and `.github/workflows/curbfix.yml`
+next to `ai_call/` (merge commit b1fbc95 on local `main`). Changes made in `ai_call/` only:
+
+- **Input = Detect's contract** (`Detect/src/types.ts`, flat, one entry per element).
+  `schema.parseViolationsFile` accepts it and the old grouped shape; groups by rule;
+  fingerprint = `fingerprintOf(ruleId, target)` = Comment's `keyOf` with whitespace
+  normalised. Used for `violations.json` and `history/violations-N.json`.
+- Detect copies axe check `data` raw: often `null`, sometimes a string. Only objects are
+  kept (this crashed fix.ts on the first full-pipeline run; regression test added).
+- For color-contrast the prompt now shows `fgColor`, `bgColor`, `contrastRatio`,
+  `expectedContrastRatio` (+ font size/weight); system prompt asks for a clear margin.
+- `engines.node` >= 22.18 (`@babel/parser` 8 needs it; CI's Node 22 is newer).
+- **Workflow updated** (user approved changes outside `ai_call/`): npm ci in
+  `ai_call/`, lockfile in cache paths, `ai_call/node_modules/.bin/tsx ai_call/src/fix.ts`
+  from the repo root, and `set +e` in the loop step (GitHub's `bash -eo pipefail` made the
+  step exit 2 at the first detect; reproduced locally, then fixed).
+- Comment's `FixesFile` schema parses our `fixes-N.json` unchanged.
+
+Full-pipeline local run (real Detect + fix.ts + Comment `--dry-run`, mirror of the
+workflow loop, TanStack demo app as target, `scratchpad/.../workflow-mirror.sh`):
+- Detect reports 24 (it runs all axe rules, not only WCAG tags: 15 region,
+  landmark-one-main, empty-heading on top of the 7 known).
+- Round 1 (2 calls): `index.html` `<div id="root">` -> `<main>` fixed landmark + all
+  15 region. App.tsx edits added an unclosed `<main>`; parse check rejected the file.
+- Round 2 (1 call): the other 7 fixed; both contrast fixes passed first try with the
+  measured data (#767676, #075985).
+- Round 3: nothing to send. Left: `empty-heading` `<h4></h4>` (no tokens, out of scope).
+- Comment: "23 of 24 detected issues fixed and verified", diffs per file.
+
+Done outside `ai_call/` afterwards (user: "do all the changes needed"):
+- `demo-app/` created: Vite 8 + React 19 + TS, header/signup/footer components, 6
+  deliberate bugs (image-alt, button-name, label, color-contrast in App.css,
+  link-name, html-has-lang), listed in its README. `build` = `tsc --noEmit && vite build`.
+- Detect honours `out-of-scope.json` (`Detect/src/outOfScope.ts`, 3 node:test tests,
+  `npm test` script added): marks `outOfScope: true`, exit 0 when only those remain.
+- Root README rewritten as the project overview.
+
+Workflow verified by running the loop step extracted from `curbfix.yml` with GitHub's
+shell flags and env on a PR-like copy (PR touches index.html, Header, SignupForm,
+App.css; not Footer): Detect 6 -> round 1 (3 calls, 4 files changed, 5 applied, 1 out of
+scope) -> Detect "No violations to fix (1 more out of scope)" exit 0 -> `status=clean`.
+Comment (`--dry-run`): "5 of 6 detected issues fixed and verified".
+
+Possible next step for mapping: a literal-snippet token (e.g. `<h4></h4>` appears verbatim
+in JSX) would have caught the last one.
+
 ## Live test results (2026-10-17)
 
 Target: TanStack `examples/react/a11y-devtools` (React 19 + Vite, commit 6fbe63f of
@@ -179,4 +227,6 @@ Second live run (same day, after the mapping change, fresh outputs):
 - 2026-10-17: M4-M6 done, 87 tests green.
 - 2026-10-17: M7-M9 done. `npx tsc --noEmit` clean, `npm test` 111 tests green. Next: M10 (needs API key).
 - 2026-10-17: First live run against Gemma 4 31B: all 5 mappable violations fixed in 2 rounds; 3 left out of scope by the mapping heuristic.
+- 2026-10-17: Whole project working: workflow fixed (paths, set +e), demo-app added, Detect honours out-of-scope; CI-equivalent run ends clean.
+- 2026-10-17: Integrated with team repo (Detect format, contrast data, workflow patch); 135 tests; full pipeline 24 -> 1.
 - 2026-10-17: Weak mapping tokens added (src, asset name, symbols, inline styles, width/height); 125 tests green. Second live run: 7 → 0 violations in 2 rounds.

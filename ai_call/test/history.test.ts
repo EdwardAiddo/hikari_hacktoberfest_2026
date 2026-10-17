@@ -62,6 +62,18 @@ describe("loadHistory", () => {
     expect(history.has("b")).toBe(true);
   });
 
+  test("reads history audits in Detect's format", async () => {
+    const { out, hist } = await setup();
+    const detect = {
+      url: "http://localhost:4173/",
+      violations: [{ ruleId: "image-alt", impact: "critical", help: "h", html: "<img>", target: ["img"], failureSummary: "" }],
+    };
+    await writeFile(join(hist, "violations-1.json"), toJson(detect));
+    await writeFile(join(out, "fixes-1.json"), fixes(1, [record("image-alt|img", "applied"), record("other", "applied")]));
+    const history = await loadHistory({ outDir: out, historyDir: hist, currentRound: 2 });
+    expect([...history.keys()]).toEqual(["image-alt|img"]);
+  });
+
   test("a missing history directory is fine", async () => {
     const history = await loadHistory({ outDir: "/nonexistent", historyDir: "/nonexistent/h", currentRound: 1 });
     expect(history.size).toBe(0);

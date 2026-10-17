@@ -2,7 +2,7 @@
 // not to repeat an edit, and to give up after MAX_FAILED_ROUNDS.
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { FixesFile, ViolationsFile, readJson, type Edit, type FixStatus } from "./schema.ts";
+import { FixesFile, readJson, readViolationsFile, type Edit, type FixStatus } from "./schema.ts";
 
 export const MAX_FAILED_ROUNDS = 2;
 
@@ -34,7 +34,7 @@ export async function numberedFiles(dir: string, prefix: string): Promise<{ n: n
 export async function loadHistory(opts: { outDir: string; historyDir: string; currentRound: number }): Promise<History> {
   const audits = new Map<number, Set<string>>();
   for (const { n, path } of await numberedFiles(opts.historyDir, "violations")) {
-    const file = await readJson(path, ViolationsFile);
+    const file = await readViolationsFile(path);
     audits.set(n, new Set(file.violations.flatMap((v) => v.nodes.map((node) => node.fingerprint))));
   }
 

@@ -3,7 +3,7 @@ name: curbfix
 # Runs on every pull request that targets main.
 #
 #   Detect  Detect/src/detect.ts  Playwright + axe-core  -> finds the violations
-#   Tool 2  src/fix.ts      Gemma 4                -> receives them, rewrites the files
+#   Tool 2  ai_call/src/fix.ts  Gemma 4            -> receives them, rewrites the files
 #   (loop)  back to Detect until it reports nothing left to fix (or MAX_ITERATIONS)
 #   Tool 3  Comment/src/comment.ts  GitHub API     -> posts the before/after on the PR
 on:
@@ -49,6 +49,7 @@ jobs:
                   cache-dependency-path: |
                       Detect/package-lock.json
                       Comment/package-lock.json
+                      ai_call/package-lock.json
                       ${{ env.APP_DIR }}/package-lock.json
 
             - name: Install Detect dependencies
@@ -62,6 +63,10 @@ jobs:
             - name: Install Comment dependencies
               run: npm ci
               working-directory: Comment
+
+            - name: Install Tool 2 (fix) dependencies
+              run: npm ci
+              working-directory: ai_call
 
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
@@ -81,7 +86,9 @@ jobs:
                   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
                   BASE_REF: origin/${{ github.base_ref }}
               run: |
-                  set -uo pipefail
+                  # GitHub runs this with `bash -eo pipefail`. The loop reads exit codes
+                  # itself (detect returns 2 when it finds violations), so turn -e off.
+                  set +e -uo pipefail
                   mkdir -p "$OUT_DIR/history"
                   status="clean"
 
@@ -123,7 +130,8 @@ jobs:
                     cp "$OUT_DIR/violations.json" "$OUT_DIR/history/violations-$i.json"
 
                     echo "::group::Iteration $i - Tool 2 (Gemma 4 fix)"
-                    npx tsx src/fix.ts \
+                    # Run from the repo root (relative paths below), with ai_call's own tsx.
+                    ai_call/node_modules/.bin/tsx ai_call/src/fix.ts \
                       --violations "$OUT_DIR/violations.json" \
                       --history "$OUT_DIR/history" \
                       --base "$BASE_REF" \

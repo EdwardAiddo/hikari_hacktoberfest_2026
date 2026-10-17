@@ -56,7 +56,19 @@ export interface PromptViolation {
   target: string[];
   html: string;
   failureSummary: string;
+  /** axe check data; for color-contrast: fgColor, bgColor, contrastRatio, expectedContrastRatio. */
+  data?: Record<string, unknown>;
   attempts: Attempt[];
+}
+
+const CONTRAST_KEYS = ["fgColor", "bgColor", "contrastRatio", "expectedContrastRatio", "fontSize", "fontWeight"];
+
+/** Measured facts from axe, one per line. Only known scalar keys, so the block stays small. */
+function renderData(data: Record<string, unknown> | undefined): string[] {
+  if (!data) return [];
+  return CONTRAST_KEYS.filter((k) => typeof data[k] === "string" || typeof data[k] === "number").map(
+    (k) => `${k}: ${String(data[k])}`,
+  );
 }
 
 function renderViolation(v: PromptViolation, nonce: string): string {
@@ -67,7 +79,11 @@ function renderViolation(v: PromptViolation, nonce: string): string {
     "",
     "Element selector, rendered HTML and axe failure summary:",
     "",
-    dataBlock(nonce, "element", [`selector: ${v.target.join(" >>> ")}`, `html: ${v.html}`, "", v.failureSummary].join("\n")),
+    dataBlock(
+      nonce,
+      "element",
+      [`selector: ${v.target.join(" >>> ")}`, `html: ${v.html}`, ...renderData(v.data), "", v.failureSummary].join("\n"),
+    ),
   ];
   if (v.attempts.length > 0) {
     lines.push("", "Previous attempts that did not fix it (do not repeat them):", "");

@@ -166,6 +166,7 @@ async function fixGroup(group: Group, client: LlmClient, input: RoundInput, base
       target: item.node.target,
       html: item.node.html,
       failureSummary: item.node.failureSummary,
+      data: item.node.data,
       attempts: failedRounds(input.history.get(item.node.fingerprint)),
     };
   });

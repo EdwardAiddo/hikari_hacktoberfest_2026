@@ -173,3 +173,15 @@ Selected with `CURBFIX_MODE`. Keep "compute fixes" separate from "deliver fixes"
 - Log to stderr with GitHub Actions annotations (`::group::`, `::warning::`, `::error::`).
 - A task is done only when `npx tsc --noEmit` and `npm test` pass.
 - If you are unsure about an external API (axe-core, Playwright, the Gemini SDK, GitHub), read the installed types or the official docs. Do not guess.
+
+## Team repo integration (added 2026-10-17, overrides older statements above)
+
+- The tools are separate packages in the team repo: `Detect/` (Tool 1), `ai_call/` (Tool 2, this folder), `Comment/` (Tool 3). They are not in one `src/`.
+- The `violations.json` contract is `Detect/src/types.ts` (flat, one entry per element, no fingerprint). `fix.ts` converts it in `src/lib/schema.ts` and computes fingerprints itself (`fingerprintOf`, same key as Comment's `keyOf`). `src/lib/schema.ts` is not shared by the other tools.
+- `Comment/src/types.ts` reads `fixes-N.json`. Do not remove or rename the fields it uses.
+- The workflow calls `ai_call/node_modules/.bin/tsx ai_call/src/fix.ts` from the repo root after `npm ci` in `ai_call/`. Keep that path working.
+- Detect reads `out-of-scope.json` (`Detect/src/outOfScope.ts`) with the same fingerprint as `fingerprintOf`. Change both together.
+- The target app is `demo-app/` at the repo root.
+- The loop step turns off bash `-e` (`set +e`): GitHub's default shell would otherwise stop at detect's exit code 2.
+- Only modify `ai_call/` unless the user says otherwise.
+

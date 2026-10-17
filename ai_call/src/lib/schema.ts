@@ -1,5 +1,7 @@
-// Schemas for every JSON file the three tools exchange. Shared by detect.ts,
-// fix.ts and comment.ts, so any change here is a contract change.
+// Schemas for the JSON files fix.ts reads and writes. The team-wide contract
+// for violations.json is Detect/src/types.ts (DetectOutput); DetectOutput below
+// mirrors it, and parseViolationsFile() converts it to the grouped shape fix.ts
+// works with. fixes-N.json is read by Comment/src/types.ts (FixesFile).
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
@@ -11,9 +13,11 @@ export const ViolationNode = z.object({
   target: z.array(z.string()),
   html: z.string(),
   failureSummary: z.string().default(""),
-  /** ruleId plus normalised target (see CLAUDE.md, detect.ts). */
+  /** ruleId plus normalised target, see fingerprintOf(). */
   fingerprint: z.string(),
   outOfScope: z.boolean().optional(),
+  /** Extra axe check data; for color-contrast: fgColor, bgColor, contrastRatio, expectedContrastRatio. */
+  data: z.record(z.string(), z.unknown()).optional(),
 });
 export type ViolationNode = z.infer<typeof ViolationNode>;
 
@@ -21,7 +25,7 @@ export const Violation = z.object({
   ruleId: z.string(),
   impact: Impact.nullable(),
   help: z.string(),
-  helpUrl: z.string(),
+  helpUrl: z.string().default(""),
   /** Page the violation was found on. detect.ts accepts a list of URLs. */
   url: z.string().optional(),
   nodes: z.array(ViolationNode),
@@ -34,6 +38,93 @@ export const ViolationsFile = z.object({
   violations: z.array(Violation),
 });
 export type ViolationsFile = z.infer<typeof ViolationsFile>;
+
+/** One failing element, as Detect writes it (Detect/src/types.ts, Violation). */
+export const DetectViolation = z.object({
+  ruleId: z.string(),
+  impact: Impact.nullable().catch(null),
+  help: z.string().default(""),
+  html: z.string(),
+  target: z.array(z.string()),
+  failureSummary: z.string().default(""),
+  // Detect copies axe's check data as is: often null, sometimes a string. Only objects are useful.
+  data: z.record(z.string(), z.unknown()).nullish().catch(undefined),
+  /** Set by Detect for fingerprints listed in out-of-scope.json. */
+  outOfScope: z.boolean().optional(),
+});
+
+/** violations.json as Detect writes it (Detect/src/types.ts, DetectOutput). */
+export const DetectOutput = z.object({
+  url: z.string(),
+  scannedAt: z.string().optional(),
+  violations: z.array(DetectViolation),
+});
+export type DetectOutput = z.infer<typeof DetectOutput>;
+
+/**
+ * Identity of a failing element across rounds: rule plus selector. Same key
+ * as Comment's keyOf(), with whitespace normalised. Heuristic: an edit can
+ * change a selector.
+ */
+export function fingerprintOf(ruleId: string, target: string[]): string {
+  return `${ruleId}|${target.join(" ").replace(/\s+/g, " ").trim()}`;
+}
+
+/** Group Detect's one-entry-per-element list by rule, in first-seen order. */
+export function fromDetectOutput(detect: DetectOutput): ViolationsFile {
+  const byRule = new Map<string, Violation>();
+  for (const v of detect.violations) {
+    const violation = byRule.get(v.ruleId) ?? {
+      ruleId: v.ruleId,
+      impact: v.impact,
+      help: v.help,
+      helpUrl: "",
+      url: detect.url,
+      nodes: [],
+    };
+    violation.nodes.push({
+      target: v.target,
+      html: v.html,
+      failureSummary: v.failureSummary,
+      fingerprint: fingerprintOf(v.ruleId, v.target),
+      ...(v.outOfScope ? { outOfScope: true } : {}),
+      ...(v.data ? { data: v.data } : {}),
+    });
+    byRule.set(v.ruleId, violation);
+  }
+  return { generatedAt: detect.scannedAt, urls: [detect.url], violations: [...byRule.values()] };
+}
+
+/**
+ * Accept both violations shapes: Detect's flat list (the team contract) and
+ * the grouped shape with per-node fingerprints. Throws with the Detect
+ * schema's error, since that is the format callers are expected to produce.
+ */
+export function parseViolationsFile(raw: unknown): ViolationsFile {
+  const list = (raw as { violations?: unknown[] } | null)?.violations;
+  const grouped = Array.isArray(list) && list.length > 0 && list.every((v) => Array.isArray((v as { nodes?: unknown })?.nodes));
+  if (grouped) return ViolationsFile.parse(raw);
+  const detect = DetectOutput.safeParse(raw);
+  if (detect.success) return fromDetectOutput(detect.data);
+  // An empty grouped file ({ violations: [] } without url) is valid too.
+  const fallback = ViolationsFile.safeParse(raw);
+  if (fallback.success) return fallback.data;
+  throw new Error(z.prettifyError(detect.error));
+}
+
+export async function readViolationsFile(path: string): Promise<ViolationsFile> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8"));
+  } catch (err) {
+    throw new Error(`cannot read ${path}: ${(err as Error).message}`);
+  }
+  try {
+    return parseViolationsFile(raw);
+  } catch (err) {
+    throw new Error(`invalid ${path}: ${(err as Error).message}`);
+  }
+}
 
 /** One search/replace edit, as proposed by the model and as recorded in fixes-N.json. */
 export const Edit = z.object({

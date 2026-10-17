@@ -10,7 +10,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "dependencies": {
     "@babel/parser": "^8.0.7",

@@ -4,7 +4,7 @@ Accessibility fixes that prove themselves.
 
 curbfix is a GitHub Actions bot for pull requests. It audits the built web app with axe-core, asks Gemma 4 to fix the violations in the files the PR touched, audits again, and reports a before/after diff on the PR.
 
-> **Status.** This package currently contains **Tool 2, `src/fix.ts`**: the part that calls the model and edits the code. `detect.ts` (the axe-core audit), `comment.ts` (the PR comment) and the workflow are not written yet. `PROGRESS.md` tracks what is done and what is next.
+> **Status.** This folder is **Tool 2, `src/fix.ts`**: the part that calls the model and edits the code. The other tools live next to it in the team repo: `Detect/` (Tool 1, the axe-core audit) and `Comment/` (Tool 3, the PR comment), wired together by `.github/workflows/curbfix.yml`. See [Integration with the team repo](#integration-with-the-team-repo). `PROGRESS.md` tracks what is done and what is next.
 
 ## How it works
 
@@ -100,6 +100,47 @@ npm test           # unit and end-to-end tests: no network, no API key
 ```
 
 The end-to-end test (`test/e2e.test.ts`) runs the real CLI and the real Google SDK against a local fake of the Gemini API. It points the SDK there with `GOOGLE_GEMINI_BASE_URL`, which the SDK supports natively.
+
+## Integration with the team repo
+
+```
+.github/workflows/curbfix.yml   the loop: Detect -> fix -> Detect ... -> Comment
+Detect/                         Tool 1: writes violations.json (contract: Detect/src/types.ts)
+ai_call/                        Tool 2: this folder
+Comment/                        Tool 3: reads violations*.json and fixes-N.json, posts the PR comment
+```
+
+- **Input.** `fix.ts` reads `violations.json` exactly as Detect writes it: one entry per failing element (`{ url, scannedAt, violations: [{ ruleId, impact, help, html, target, failureSummary, data? }] }`). It groups the entries by rule and computes each element's fingerprint as `ruleId|target`, the same key Comment uses. For `color-contrast`, Detect's measured `data` (colours, actual and required ratio) is passed to the model. The older grouped format with `nodes` is still accepted.
+- **Output.** Comment reads `fixes-N.json` with its own lenient schema (`Comment/src/types.ts`). The fields it needs (`round`, `model`, `error`, `records[].ruleId/impact/target/status/reason/file/edits`) are all written by `fix.ts`.
+- **Workflow.** The workflow runs `npm ci` in `ai_call/` and calls `ai_call/node_modules/.bin/tsx ai_call/src/fix.ts` from the repo root, so the relative paths (`curbfix-out/…`, `demo-app`) resolve there.
+- **Out of scope.** `fix.ts` writes `curbfix-out/out-of-scope.json`. Detect reads it, keeps those violations with `outOfScope: true`, and exits 0 when only out-of-scope ones remain, so the run can end `clean`.
+- **Target app.** `demo-app/` (the workflow's `APP_DIR`), a Vite + React app with deliberate bugs.
+
+### Running the whole pipeline locally
+
+This is what the workflow does, minus GitHub. Run it from the root of a repo whose PR branch is checked out, with the app in `app/` (replace `$WS` with the path of the team repo):
+
+```sh
+(cd $WS/Detect && npm ci && npx playwright install chromium)
+(cd $WS/Comment && npm ci)
+(cd $WS/ai_call && npm ci)
+REPO=$PWD     # the repo under test; the tools below run from their own folders
+mkdir -p curbfix-out/history
+
+# serve the app in another terminal: (cd app && npm run build && npx vite preview --port 4173 --strictPort)
+(cd $WS/Detect && npx tsx src/detect.ts --url http://localhost:4173 --out "$REPO/curbfix-out/violations.json")
+cp curbfix-out/violations.json curbfix-out/violations-initial.json
+cp curbfix-out/violations.json curbfix-out/history/violations-1.json
+
+$WS/ai_call/node_modules/.bin/tsx --env-file-if-exists=$WS/ai_call/.env $WS/ai_call/src/fix.ts \
+  --violations curbfix-out/violations.json --history curbfix-out/history \
+  --base main --app app --out curbfix-out/fixes-1.json
+
+# rebuild and re-serve the app, run Detect again; repeat with -2, -3 ... then:
+(cd $WS/Comment && npx tsx src/comment.ts --dir "$REPO/curbfix-out" --status unverified --dry-run)
+```
+
+`--dry-run` prints the comment instead of posting it, so no GitHub token is needed.
 
 ## Running fix.ts
 
@@ -209,12 +250,12 @@ API errors 429 and 5xx, and network errors, are retried up to 5 times with expon
 
 | File | Written by | Meaning |
 | --- | --- | --- |
-| `violations.json` | detect | latest audit; input to `fix.ts` |
+| `violations.json` | Detect | latest audit; input to `fix.ts` |
 | `history/violations-N.json` | workflow | the audit round N worked from |
 | `fixes-N.json` | fix | what round N changed and why |
 | `out-of-scope.json` | fix | elements this PR can't fix |
 
-The JSON formats are defined, and validated, in `src/lib/schema.ts`, which all three tools share.
+`violations.json` follows Detect's contract (`Detect/src/types.ts`). `src/lib/schema.ts` mirrors it, converts it, and defines `fixes-N.json` and `out-of-scope.json`, which Comment reads with its own schema.
 
 ## Project layout
 

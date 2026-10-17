@@ -18,6 +18,8 @@ export interface Violation {
   failureSummary: string;
   /** extra rule data; for color-contrast: fgColor, bgColor, contrastRatio, expectedContrastRatio */
   data?: Record<string, unknown>;
+  /** set when Tool 2 listed this element in out-of-scope.json: reported, but not counted for the exit code */
+  outOfScope?: boolean;
 }
 
 /** What scanPage() returns for one URL. */
