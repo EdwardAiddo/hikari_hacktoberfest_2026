@@ -21,6 +21,11 @@
   --color-ring: var(--ring);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-kotta);
+}
+
+@utility font-inter {
+  font-family: var(--font-inter-family), sans-serif;
 }
 
 html {

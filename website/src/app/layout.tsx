@@ -1,6 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
+
+const kottaOne = localFont({
+  src: "../../public/fonts/KottaOne-Regular.ttf",
+  variable: "--font-kotta",
+  display: "swap",
+});
+
+const inter = Inter({
+  variable: "--font-inter-family",
+  subsets: ["latin"],
+});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${kottaOne.variable} ${inter.variable} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background font-sans text-foreground">
         {children}

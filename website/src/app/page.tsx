@@ -2,8 +2,11 @@ import { Hero } from "@/components/Hero";
 
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-background px-6 py-24 text-foreground">
-      <main className="flex w-full max-w-3xl flex-col items-center sm:items-start">
+    <div className="relative flex min-h-dvh flex-1 flex-col bg-background text-foreground">
+      <p className="absolute top-6 left-6 font-inter text-sm font-medium tracking-wide text-muted-foreground uppercase">
+        Hacktoberfest 2026
+      </p>
+      <main className="flex flex-1 items-center justify-center px-6">
         <Hero />
       </main>
     </div>
