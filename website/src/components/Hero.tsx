@@ -14,7 +14,7 @@ export function Hero() {
       <h1 className="animate-enter enter-delay-2 font-display text-6xl text-foreground sm:text-8xl">
         Hikari
       </h1>
-      <p className="animate-enter enter-delay-3 text-lg leading-8 text-foreground">
+      <p className="animate-enter enter-delay-3 text-lg leading-8 text-pretty text-foreground">
         Accessibility fixes that prove themselves
       </p>
     </section>

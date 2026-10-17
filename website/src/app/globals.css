@@ -70,15 +70,15 @@ body {
   }
 
   .enter-delay-1 {
-    animation-delay: 120ms;
+    animation-delay: 60ms;
   }
 
   .enter-delay-2 {
-    animation-delay: 240ms;
+    animation-delay: 120ms;
   }
 
   .enter-delay-3 {
-    animation-delay: 360ms;
+    animation-delay: 180ms;
   }
 
   .ascii-mark {
