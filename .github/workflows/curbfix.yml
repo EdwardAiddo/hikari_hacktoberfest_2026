@@ -2,9 +2,9 @@ name: curbfix
 
 # Runs on every pull request that targets main.
 #
-#   Tool 1  tool1/src/detect.ts  Playwright + axe-core  -> finds the violations
+#   Detect  Detect/src/detect.ts  Playwright + axe-core  -> finds the violations
 #   Tool 2  src/fix.ts      Gemma 4                -> receives them, rewrites the files
-#   (loop)  back to Tool 1 until it reports nothing left to fix (or MAX_ITERATIONS)
+#   (loop)  back to Detect until it reports nothing left to fix (or MAX_ITERATIONS)
 #   Tool 3  src/comment.ts  GitHub API             -> posts the before/after on the PR
 on:
     pull_request:
@@ -47,12 +47,12 @@ jobs:
                   node-version: 22
                   cache: npm
                   cache-dependency-path: |
-                      tool1/package-lock.json
+                      Detect/package-lock.json
                       ${{ env.APP_DIR }}/package-lock.json
 
-            - name: Install Tool 1 dependencies
+            - name: Install Detect dependencies
               run: npm ci
-              working-directory: tool1
+              working-directory: Detect
 
             - name: Install app dependencies
               run: npm ci
@@ -60,7 +60,7 @@ jobs:
 
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
-              working-directory: tool1
+              working-directory: Detect
 
             # ---------------------------------------------------------------
             # The loop. Contract between the tools:
@@ -80,7 +80,7 @@ jobs:
                   mkdir -p "$OUT_DIR/history"
                   status="clean"
 
-                  # Build the app, serve it, run Tool 1, stop the server.
+                  # Build the app, serve it, run Detect, stop the server.
                   # Returns detect.ts's exit code.
                   run_detect() {
                     local label="$1"
@@ -88,8 +88,8 @@ jobs:
                     (cd "$APP_DIR" && npx vite preview --port "$APP_PORT" --strictPort) \
                       > "$OUT_DIR/preview.log" 2>&1 &
                     local server=$!
-                    (cd tool1 && npx wait-on "http://localhost:$APP_PORT" --timeout 30000) || { kill $server; return 1; }
-                    (cd tool1 && npx tsx src/detect.ts \
+                    (cd Detect && npx wait-on "http://localhost:$APP_PORT" --timeout 30000) || { kill $server; return 1; }
+                    (cd Detect && npx tsx src/detect.ts \
                       --url "http://localhost:$APP_PORT" \
                       --out "$GITHUB_WORKSPACE/$OUT_DIR/violations.json" \
                       --screenshot "$GITHUB_WORKSPACE/$OUT_DIR/$label.png")
@@ -100,7 +100,7 @@ jobs:
                   }
 
                   for i in $(seq 1 "$MAX_ITERATIONS"); do
-                    echo "::group::Iteration $i - Tool 1 (detect)"
+                    echo "::group::Iteration $i - Detect (detect)"
                     run_detect "iteration-$i"
                     code=$?
                     echo "::endgroup::"
@@ -108,10 +108,10 @@ jobs:
                     [ "$i" -eq 1 ] && cp "$OUT_DIR/violations.json" "$OUT_DIR/violations-initial.json" 2>/dev/null
 
                     if [ "$code" -eq 0 ]; then
-                      echo "Tool 1 found nothing left to fix after $((i-1)) fix round(s)."
+                      echo "Detect found nothing left to fix after $((i-1)) fix round(s)."
                       status="clean"; break
                     elif [ "$code" -ne 2 ]; then
-                      echo "::error::Tool 1 (detect) failed with exit code $code"
+                      echo "::error::Detect (detect) failed with exit code $code"
                       exit "$code"
                     fi
 
