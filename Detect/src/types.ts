@@ -20,6 +20,8 @@ export interface Violation {
   data?: Record<string, unknown>;
   /** set when Tool 2 listed this element in out-of-scope.json: reported, but not counted for the exit code */
   outOfScope?: boolean;
+  /** page the element was found on (set when several URLs are audited) */
+  url?: string;
 }
 
 /** What scanPage() returns for one URL. */
@@ -32,7 +34,10 @@ export interface PageResult {
 
 /** Shape of the file detect.ts writes to --out (violations.json). */
 export interface DetectOutput {
+  /** first audited URL (kept for tools that read a single url) */
   url: string;
+  /** every audited URL, in the order given */
+  urls: string[];
   /** ISO timestamp of the scan */
   scannedAt: string;
   violations: Violation[];

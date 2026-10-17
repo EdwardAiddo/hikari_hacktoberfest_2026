@@ -18,6 +18,8 @@ export const ViolationNode = z.object({
   outOfScope: z.boolean().optional(),
   /** Extra axe check data; for color-contrast: fgColor, bgColor, contrastRatio, expectedContrastRatio. */
   data: z.record(z.string(), z.unknown()).optional(),
+  /** Page the element was found on. */
+  url: z.string().optional(),
 });
 export type ViolationNode = z.infer<typeof ViolationNode>;
 
@@ -51,11 +53,14 @@ export const DetectViolation = z.object({
   data: z.record(z.string(), z.unknown()).nullish().catch(undefined),
   /** Set by Detect for fingerprints listed in out-of-scope.json. */
   outOfScope: z.boolean().optional(),
+  /** Page the element was found on, when Detect audited several URLs. */
+  url: z.string().optional(),
 });
 
 /** violations.json as Detect writes it (Detect/src/types.ts, DetectOutput). */
 export const DetectOutput = z.object({
   url: z.string(),
+  urls: z.array(z.string()).optional(),
   scannedAt: z.string().optional(),
   violations: z.array(DetectViolation),
 });
@@ -79,7 +84,7 @@ export function fromDetectOutput(detect: DetectOutput): ViolationsFile {
       impact: v.impact,
       help: v.help,
       helpUrl: "",
-      url: detect.url,
+      url: v.url ?? detect.url,
       nodes: [],
     };
     violation.nodes.push({
@@ -87,12 +92,13 @@ export function fromDetectOutput(detect: DetectOutput): ViolationsFile {
       html: v.html,
       failureSummary: v.failureSummary,
       fingerprint: fingerprintOf(v.ruleId, v.target),
+      url: v.url ?? detect.url,
       ...(v.outOfScope ? { outOfScope: true } : {}),
       ...(v.data ? { data: v.data } : {}),
     });
     byRule.set(v.ruleId, violation);
   }
-  return { generatedAt: detect.scannedAt, urls: [detect.url], violations: [...byRule.values()] };
+  return { generatedAt: detect.scannedAt, urls: detect.urls ?? [detect.url], violations: [...byRule.values()] };
 }
 
 /**

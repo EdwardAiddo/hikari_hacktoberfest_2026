@@ -181,7 +181,7 @@ Selected with `CURBFIX_MODE`. Keep "compute fixes" separate from "deliver fixes"
 - `Comment/src/types.ts` reads `fixes-N.json`. Do not remove or rename the fields it uses.
 - The workflow calls `ai_call/node_modules/.bin/tsx ai_call/src/fix.ts` from the repo root after `npm ci` in `ai_call/`. Keep that path working.
 - Detect reads `out-of-scope.json` (`Detect/src/outOfScope.ts`) with the same fingerprint as `fingerprintOf`. Change both together.
-- The target app is `demo-app/` at the repo root.
+- The audited app is chosen per PR (`.github/scripts/curbfix-target.mjs`, `CURBFIX_APPS` in the workflow): `website/` (Next.js, served with `next start`) or `demo-app/` (Vite fixture). Several pages can be audited; each Detect entry then carries its `url`, which `locateByRoute` uses for page-level rules.
 - The loop step turns off bash `-e` (`set +e`): GitHub's default shell would otherwise stop at detect's exit code 2.
 - Only modify `ai_call/` unless the user says otherwise.
 

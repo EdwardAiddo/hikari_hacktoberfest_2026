@@ -173,6 +173,35 @@ Comment (`--dry-run`): "5 of 6 detected issues fixed and verified".
 Possible next step for mapping: a literal-snippet token (e.g. `<h4></h4>` appears verbatim
 in JSX) would have caught the last one.
 
+## Team test on PR #4 and fixes (2026-10-17, afternoon)
+
+The team's PR #4 changed only `website/` (new `/demo` page with deliberate bugs). The run
+"detected but did not fix": the workflow always audited `demo-app/` at `/`, so all 6
+demo-app violations were out of scope for that PR. Changes:
+
+- `.github/scripts/curbfix-target.mjs` (+ node:test tests): picks the app the PR changed
+  (`CURBFIX_APPS="website demo-app"`), its kind (next|vite) and pages (`/` + changed
+  app-router `page.*` routes; dynamic/unsafe segments skipped). No app changed: skip.
+- Workflow: target step first; installs only that app; serves with the app's own
+  `next start` / `vite preview` binary (exec'd so kill works); checks the port is free
+  before each round; passes every page to Detect.
+- Detect: repeated `--url` (entries tagged with `url`, `urls` in output), reduced-motion
+  context (the website fades content in), and a **contrast recheck** for axe "incomplete"
+  nodes (imgNode/bgImage/bgOverlap): CSS background colours only, image ignored, labelled
+  in failureSummary and `data.recheckedBecause`. Canvas converts oklch etc. to sRGB. The
+  in-page code is a JS string: tsx/esbuild's `__name` helper broke `page.evaluate`.
+- ai_call: page-level rules on `<html>`/`<body>` map to the changed page component for the
+  node's `url` (`locateByRoute`, app + pages router), with a prompt note.
+
+CI-equivalent run on a PR #4 replica (workflow steps extracted from the YAML, bash -eo
+pipefail): target `website` `/ /demo`; Detect 5 (3 region, page-has-heading-one,
+rechecked color-contrast 1.1:1); round 1, 2 calls: title div -> h1, oklch L 0.93 -> 0.4,
+header landmarks; Detect clean, `status=clean`; Comment: 5 verified.
+Regression run on a demo-app PR: unchanged (5 fixed, footer out of scope, clean).
+
+Not detectable by axe, so not fixed (by design): informative image with `alt=""`,
+status shown only by a green dot, a `<div>` used as a button.
+
 ## Live test results (2026-10-17)
 
 Target: TanStack `examples/react/a11y-devtools` (React 19 + Vite, commit 6fbe63f of
@@ -227,6 +256,7 @@ Second live run (same day, after the mapping change, fresh outputs):
 - 2026-10-17: M4-M6 done, 87 tests green.
 - 2026-10-17: M7-M9 done. `npx tsc --noEmit` clean, `npm test` 111 tests green. Next: M10 (needs API key).
 - 2026-10-17: First live run against Gemma 4 31B: all 5 mappable violations fixed in 2 rounds; 3 left out of scope by the mapping heuristic.
+- 2026-10-17: PR #4 (website) now audited and fixed end to end: target selection, multi-page Detect, contrast recheck, page-level mapping.
 - 2026-10-17: Whole project working: workflow fixed (paths, set +e), demo-app added, Detect honours out-of-scope; CI-equivalent run ends clean.
 - 2026-10-17: Integrated with team repo (Detect format, contrast data, workflow patch); 135 tests; full pipeline 24 -> 1.
 - 2026-10-17: Weak mapping tokens added (src, asset name, symbols, inline styles, width/height); 125 tests green. Second live run: 7 → 0 violations in 2 rounds.

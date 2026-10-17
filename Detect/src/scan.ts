@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
+import { recheckContrast } from "./recheck.js";
 import type { Impact, PageResult, Violation } from "./types.js";
 
 export interface ScanOptions {
@@ -27,8 +28,10 @@ export async function scanPage(
 ): Promise<PageResult> {
 	const browser = await chromium.launch({ headless: true });
 	try {
-		// axe requires a page created from an explicit context
-		const context = await browser.newContext();
+		// axe requires a page created from an explicit context. Reduced motion
+		// makes sites skip entrance animations, so axe never measures text
+		// halfway through a fade-in (false color-contrast failures).
+		const context = await browser.newContext({ reducedMotion: "reduce" });
 		const page = await context.newPage();
 		await page.goto(url, { waitUntil: "networkidle" });
 
@@ -51,6 +54,8 @@ export async function scanPage(
 				});
 			}
 		}
+
+		violations.push(...(await recheckContrast(page, results.incomplete)));
 
 		// most severe first
 		violations.sort((a, b) => impactScore(b.impact) - impactScore(a.impact));

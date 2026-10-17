@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   extractTokens,
+  isPageLevel,
+  locateByRoute,
   locateNode,
+  routeOfPageFile,
   parseRootTag,
   selectorParts,
   textChunks,
@@ -236,5 +239,38 @@ describe("weak tokens", () => {
       [file("app/src/A.tsx", `export const A = () => <span style={{ display: 'inline-block' }} />;\n`)],
     );
     expect(result.file).toBeNull();
+  });
+});
+
+describe("page-level rules", () => {
+  test("isPageLevel recognises <html>/<body> targets", () => {
+    expect(isPageLevel({ html: '<html lang="en" class="x">', target: ["html"] })).toBe(true);
+    expect(isPageLevel({ html: "<body>", target: ["body"] })).toBe(true);
+    expect(isPageLevel({ html: "<p>x</p>", target: ["p"] })).toBe(false);
+  });
+
+  test.each([
+    ["website/src/app/page.tsx", "/"],
+    ["website/src/app/demo/page.tsx", "/demo"],
+    ["website/app/(marketing)/about/page.mdx", "/about"],
+    ["website/src/app/@modal/login/page.tsx", "/login"],
+    ["site/pages/index.tsx", "/"],
+    ["site/pages/blog/index.jsx", "/blog"],
+    ["site/pages/contact.tsx", "/contact"],
+    ["site/pages/_app.tsx", null],
+    ["site/pages/api/hello.ts", null],
+    ["website/src/components/Hero.tsx", null],
+    ["website/src/app/demo/layout.tsx", null],
+  ])("routeOfPageFile(%s) = %s", (rel, route) => {
+    expect(routeOfPageFile(rel)).toBe(route);
+  });
+
+  test("locateByRoute picks the changed page for the URL", () => {
+    const home = file("website/src/app/page.tsx", "export default function Home() {}");
+    const demo = file("website/src/app/demo/page.tsx", "export default function Demo() {}");
+    expect(locateByRoute("http://localhost:4173/demo", [home, demo])?.rel).toBe("website/src/app/demo/page.tsx");
+    expect(locateByRoute("http://localhost:4173/", [home, demo])?.rel).toBe("website/src/app/page.tsx");
+    expect(locateByRoute("http://localhost:4173/other", [home, demo])).toBeNull();
+    expect(locateByRoute(undefined, [home, demo])).toBeNull();
   });
 });

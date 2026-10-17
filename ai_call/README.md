@@ -114,7 +114,8 @@ Comment/                        Tool 3: reads violations*.json and fixes-N.json,
 - **Output.** Comment reads `fixes-N.json` with its own lenient schema (`Comment/src/types.ts`). The fields it needs (`round`, `model`, `error`, `records[].ruleId/impact/target/status/reason/file/edits`) are all written by `fix.ts`.
 - **Workflow.** The workflow runs `npm ci` in `ai_call/` and calls `ai_call/node_modules/.bin/tsx ai_call/src/fix.ts` from the repo root, so the relative paths (`curbfix-out/…`, `demo-app`) resolve there.
 - **Out of scope.** `fix.ts` writes `curbfix-out/out-of-scope.json`. Detect reads it, keeps those violations with `outOfScope: true`, and exits 0 when only out-of-scope ones remain, so the run can end `clean`.
-- **Target app.** `demo-app/` (the workflow's `APP_DIR`), a Vite + React app with deliberate bugs.
+- **Target app.** Chosen per PR by `.github/scripts/curbfix-target.mjs`: the first app in `CURBFIX_APPS` (`website`, then `demo-app`) that the PR changed. For Next.js it also lists the pages to audit (`/` plus changed `app/**/page.*` routes), passed to Detect as repeated `--url`.
+- **Page-level rules.** Violations on `<html>`/`<body>` (e.g. `page-has-heading-one`) that no changed file contains are mapped to the changed page component for the URL they were found on (`mapping.locateByRoute`), and the prompt says the rule is about the whole page.
 
 ### Running the whole pipeline locally
 

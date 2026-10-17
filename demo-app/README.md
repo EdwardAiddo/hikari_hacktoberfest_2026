@@ -1,6 +1,6 @@
 # demo-app
 
-The target app for the curbfix workflow (`.github/workflows/curbfix.yml`, `APP_DIR: demo-app`). The workflow builds it, serves it with `vite preview` on port 4173, audits it with Detect, and lets Tool 2 fix the violations in the files a PR changed.
+A test app for the curbfix workflow (`.github/workflows/curbfix.yml`). When a PR changes files here (and not in `website/`, which comes first in `CURBFIX_APPS`), the workflow builds it, serves it with `vite preview` on port 4173, audits it with Detect, and lets Tool 2 fix the violations in the files the PR changed.
 
 **It contains deliberate accessibility bugs. Do not fix them by hand**: they are what curbfix is tested against.
 

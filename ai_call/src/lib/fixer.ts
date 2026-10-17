@@ -6,7 +6,7 @@ import { normaliseRel, planEdits, revertFiles, writePlan } from "./edits.ts";
 import { failedRounds, shouldGiveUp, MAX_FAILED_ROUNDS, type History } from "./history.ts";
 import { LlmBudgetError, LlmFatalError, type LlmClient } from "./llm.ts";
 import type { Logger } from "./log.ts";
-import { locateNode, type SourceFile } from "./mapping.ts";
+import { isPageLevel, locateByRoute, locateNode, relatedCss, type SourceFile } from "./mapping.ts";
 import { buildFixPrompt, type PromptViolation } from "./prompts.ts";
 import { proposeEdits } from "./propose.ts";
 import type { Edit, FixRecord, OutOfScopeEntry, Violation, ViolationNode, ViolationsFile } from "./schema.ts";
@@ -42,6 +42,8 @@ export interface RoundOutput {
 interface Item {
   violation: Violation;
   node: ViolationNode;
+  /** Set when a page-level rule was mapped to the page component for this URL. */
+  pageUrl?: string;
 }
 
 function record(item: Item, status: FixRecord["status"], reason: string, file: string | null = null, edits: Edit[] = []): FixRecord {
@@ -88,7 +90,15 @@ export async function runRound(input: RoundInput): Promise<RoundOutput> {
         records.push(record(item, "failed", `still failing after ${MAX_FAILED_ROUNDS} attempts (rounds ${rounds}); not retried`));
         continue;
       }
-      const located = locateNode(node, input.candidates);
+      let located = locateNode(node, input.candidates);
+      let pageLevel = false;
+      if (!located.file && isPageLevel(node)) {
+        const page = locateByRoute(node.url, input.candidates);
+        if (page) {
+          located = { file: page, score: 0, matched: ["route"], related: relatedCss(page, [], input.candidates) };
+          pageLevel = true;
+        }
+      }
       if (!located.file) {
         records.push(record(item, "out_of_scope", located.reason));
         newOutOfScope.push({ fingerprint: node.fingerprint, ruleId: violation.ruleId, reason: located.reason });
@@ -96,7 +106,7 @@ export async function runRound(input: RoundInput): Promise<RoundOutput> {
       }
       const group = groups.get(located.file) ?? { file: located.file, related: new Set(), items: [] };
       for (const r of located.related) group.related.add(r);
-      group.items.push(item);
+      group.items.push(pageLevel ? { ...item, pageUrl: node.url } : item);
       groups.set(located.file, group);
     }
   }
@@ -167,6 +177,7 @@ async function fixGroup(group: Group, client: LlmClient, input: RoundInput, base
       html: item.node.html,
       failureSummary: item.node.failureSummary,
       data: item.node.data,
+      pageUrl: item.pageUrl,
       attempts: failedRounds(input.history.get(item.node.fingerprint)),
     };
   });

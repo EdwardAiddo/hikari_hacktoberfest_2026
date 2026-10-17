@@ -93,6 +93,7 @@ describe("parseViolationsFile", () => {
     ]);
     expect(parsed.violations[0]?.helpUrl).toBe("");
     expect(parsed.violations[1]?.nodes[0]?.data).toMatchObject({ contrastRatio: 2.32 });
+    expect(parsed.violations[0]?.nodes[0]?.url).toBe("http://localhost:4173/");
   });
 
   test("still accepts the grouped shape", () => {
@@ -107,6 +108,11 @@ describe("parseViolationsFile", () => {
   test("accepts Detect's clean output and an empty grouped file", () => {
     expect(parseViolationsFile({ url: "http://x/", scannedAt: "t", violations: [] }).violations).toEqual([]);
     expect(parseViolationsFile({ violations: [] }).violations).toEqual([]);
+  });
+
+  test("reads the list of audited URLs from a multi-page scan", () => {
+    const multi = { ...detectOutput, urls: ["http://localhost:4173/", "http://localhost:4173/demo"] };
+    expect(parseViolationsFile(multi).urls).toEqual(["http://localhost:4173/", "http://localhost:4173/demo"]);
   });
 
   test("keeps Detect's outOfScope flag", () => {

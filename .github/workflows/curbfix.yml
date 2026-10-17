@@ -2,6 +2,7 @@ name: curbfix
 
 # Runs on every pull request that targets main.
 #
+#   Target  .github/scripts/curbfix-target.mjs        -> which app the PR changed, which pages
 #   Detect  Detect/src/detect.ts  Playwright + axe-core  -> finds the violations
 #   Tool 2  ai_call/src/fix.ts  Gemma 4            -> receives them, rewrites the files
 #   (loop)  back to Detect until it reports nothing left to fix (or MAX_ITERATIONS)
@@ -22,10 +23,12 @@ concurrency:
     cancel-in-progress: true
 
 env:
-    APP_DIR: demo-app
+    # Apps the bot can audit, in priority order: a PR is audited on the first one it changes.
+    CURBFIX_APPS: website demo-app
     APP_PORT: "4173"
     OUT_DIR: curbfix-out
     MAX_ITERATIONS: "3"
+    NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
     audit:
@@ -50,25 +53,39 @@ jobs:
                       Detect/package-lock.json
                       Comment/package-lock.json
                       ai_call/package-lock.json
-                      ${{ env.APP_DIR }}/package-lock.json
+                      website/package-lock.json
+                      demo-app/package-lock.json
+
+            # Which app did this PR change, and which of its pages to audit.
+            # Outputs app (empty = nothing to audit), kind (next|vite) and paths.
+            - name: Choose the app to audit
+              id: target
+              env:
+                  BASE_REF: origin/${{ github.base_ref }}
+              run: node .github/scripts/curbfix-target.mjs
 
             - name: Install Detect dependencies
+              if: steps.target.outputs.app != ''
               run: npm ci
               working-directory: Detect
 
             - name: Install app dependencies
+              if: steps.target.outputs.app != ''
               run: npm ci
-              working-directory: ${{ env.APP_DIR }}
+              working-directory: ${{ steps.target.outputs.app }}
 
             - name: Install Comment dependencies
+              if: steps.target.outputs.app != ''
               run: npm ci
               working-directory: Comment
 
             - name: Install Tool 2 (fix) dependencies
+              if: steps.target.outputs.app != ''
               run: npm ci
               working-directory: ai_call
 
             - name: Install Chromium
+              if: steps.target.outputs.app != ''
               run: npx playwright install --with-deps chromium
               working-directory: Detect
 
@@ -82,9 +99,13 @@ jobs:
             # ---------------------------------------------------------------
             - name: Detect -> Gemma 4 fix -> re-detect loop
               id: loop
+              if: steps.target.outputs.app != ''
               env:
                   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
                   BASE_REF: origin/${{ github.base_ref }}
+                  APP_DIR: ${{ steps.target.outputs.app }}
+                  APP_KIND: ${{ steps.target.outputs.kind }}
+                  APP_PATHS: ${{ steps.target.outputs.paths }}
               run: |
                   # GitHub runs this with `bash -eo pipefail`. The loop reads exit codes
                   # itself (detect returns 2 when it finds violations), so turn -e off.
@@ -92,22 +113,37 @@ jobs:
                   mkdir -p "$OUT_DIR/history"
                   status="clean"
 
+                  # How to serve each kind of app. The app's own binary is exec'd, so
+                  # $! is the server itself and `kill` really stops it.
+                  case "$APP_KIND" in
+                    next) serve=(node_modules/.bin/next start --port "$APP_PORT") ;;
+                    vite) serve=(node_modules/.bin/vite preview --port "$APP_PORT" --strictPort) ;;
+                    *) echo "::error::unsupported app kind '$APP_KIND'"; exit 1 ;;
+                  esac
+                  urls=()
+                  for p in $APP_PATHS; do urls+=(--url "http://localhost:$APP_PORT$p"); done
+                  echo "Auditing $APP_DIR ($APP_KIND): $APP_PATHS"
+
+                  port_busy() { curl -s -o /dev/null "http://localhost:$APP_PORT"; }
+
                   # Build the app, serve it, run Detect, stop the server.
                   # Returns detect.ts's exit code.
                   run_detect() {
                     local label="$1"
                     (cd "$APP_DIR" && npm run build) || return 1
-                    (cd "$APP_DIR" && npx vite preview --port "$APP_PORT" --strictPort) \
-                      > "$OUT_DIR/preview.log" 2>&1 &
+                    # A server left over from the previous round would serve the old build.
+                    if port_busy; then echo "::error::port $APP_PORT is still in use"; return 1; fi
+                    (cd "$APP_DIR" && exec "${serve[@]}") >> "$OUT_DIR/preview.log" 2>&1 &
                     local server=$!
-                    (cd Detect && npx wait-on "http://localhost:$APP_PORT" --timeout 30000) || { kill $server; return 1; }
+                    (cd Detect && npx wait-on "http://localhost:$APP_PORT" --timeout 60000) || { kill $server; return 1; }
                     (cd Detect && npx tsx src/detect.ts \
-                      --url "http://localhost:$APP_PORT" \
+                      "${urls[@]}" \
                       --out "$GITHUB_WORKSPACE/$OUT_DIR/violations.json" \
                       --screenshot "$GITHUB_WORKSPACE/$OUT_DIR/$label.png")
                     local code=$?
                     kill $server 2>/dev/null
                     wait $server 2>/dev/null
+                    for _ in $(seq 1 20); do port_busy || break; sleep 0.5; done
                     return $code
                   }
 

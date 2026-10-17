@@ -75,6 +75,9 @@ Opens the built app in headless **Playwright** Chromium and runs **axe-core**. D
 
 - One entry per failing element, with rule, impact, HTML snippet, CSS selector and axe's failure summary.
 - For `color-contrast`, the foreground and background colors and the contrast ratio are kept, so the model can choose a valid color.
+- **Contrast behind images.** When axe cannot decide a contrast check because an image or overlapping element hides the background, Detect rechecks it with the CSS background colors (ignoring the image) and reports it if it fails. These entries say so in their failure summary.
+- Audits several pages in one run (`--url` can be repeated), with reduced motion so entrance animations never skew the result.
+- Violations that Fix marked out of scope for the PR are kept in the report but do not count for the exit code.
 - Results are sorted by impact, critical first, and optionally a full-page screenshot is saved.
 - Exit codes drive the loop: `0` nothing to fix, `2` violations found, `1` error.
 
@@ -83,7 +86,7 @@ Opens the built app in headless **Playwright** Chromium and runs **axe-core**. D
 **Gemma 4**, an open-weight model, is the engine, called through the Gemini API with function calling and a JSON fallback.
 
 - **Scope limited to the PR.** Only files the PR added or modified are candidates. A problem in code the PR did not touch is reported as *out of scope* rather than "fixed" somewhere unrelated.
-- **Element to source file.** axe reports on the rendered page, not on source lines, so Hikari scores the candidate files by the ids, text, `alt`/`aria-label` values and class names found in the failing element's HTML.
+- **Element to source file.** axe reports on the rendered page, not on source lines, so Hikari scores the candidate files by the ids, text, `alt`/`aria-label` values and class names found in the failing element's HTML. Page-level rules (a missing `h1`, landmarks) point at `<html>`, so they go to the changed page component for the audited URL.
 - **Small edits, one call per file.** The model returns search/replace edits instead of whole files, which is more reliable for a small model and keeps the diff minimal.
 - **Model output is untrusted.** An edit must name a file from that call and its `oldStr` must occur exactly once. Each file is all-or-nothing, an edited file must still parse, and it must not add TypeScript errors. Otherwise the file is left unchanged.
 - **Learns from failed rounds.** Earlier attempts on a still-failing element go into the next prompt; after two failed rounds the element is marked failed.
@@ -95,7 +98,7 @@ Reads the files the loop left behind and builds one markdown report: a headline 
 
 ### The workflow (`.github/workflows/`)
 
-Triggered on every pull request to `main`. It installs the tools, builds and serves the app, then runs the loop: **Detect → Fix → rebuild → Detect**, for at most 3 rounds, ending as soon as Detect finds nothing. The comment step always runs, even when the loop failed, so the PR is never left silent. Screenshots and logs are uploaded as an artifact. Concurrent runs on the same PR cancel each other, and permissions are limited to `contents: read` and `pull-requests: write`.
+Triggered on every pull request to `main`. It first picks **which app the PR changed** (`website`, then `demo-app`; see `CURBFIX_APPS`) and, for a Next.js app, **which pages**: `/` plus the route of every changed `app/**/page.tsx`. A PR that changes no app is skipped. It then installs the tools, builds and serves that app (`next start` or `vite preview`), and runs the loop: **Detect → Fix → rebuild → Detect**, for at most 3 rounds, ending as soon as Detect finds nothing. The comment step always runs, even when the loop failed, so the PR is never left silent. Screenshots and logs are uploaded as an artifact. Concurrent runs on the same PR cancel each other, and permissions are limited to `contents: read` and `pull-requests: write`.
 
 ### Stack
 
@@ -116,8 +119,9 @@ Triggered on every pull request to `main`. It installs the tools, builds and ser
 | [`Detect/`](Detect) | Tool 1: scanner and CLI |
 | `ai_call/` | Tool 2: the Gemma 4 fixer, see [`ai_call/README.md`](ai_call/README.md) |
 | [`Comment/`](Comment) | Tool 3: PR report and comment |
-| `website/` | Project landing page |
-| [`.github/workflows/`](.github/workflows) | The pipeline |
+| `website/` | Project landing page (Next.js); audited when a PR changes it |
+| [`demo-app/`](demo-app/README.md) | Small Vite + React app with deliberate accessibility bugs |
+| [`.github/workflows/`](.github/workflows) | The pipeline; `.github/scripts/curbfix-target.mjs` picks the app and pages |
 
 ## 4. Using it
 
@@ -132,13 +136,13 @@ Triggered on every pull request to `main`. It installs the tools, builds and ser
 
 Requirements: Node.js 22 or newer, and Git.
 
-**Detect**: audit any page.
+**Detect**: audit any page (repeat `--url` for several).
 
 ```bash
 cd Detect
 npm ci
 npx playwright install chromium
-npx tsx src/detect.ts --url http://localhost:4173 \
+npx tsx src/detect.ts --url http://localhost:4173 --url http://localhost:4173/demo \
   --out ../curbfix-out/violations.json --screenshot ../curbfix-out/page.png
 ```
 
@@ -163,7 +167,8 @@ npm test
 
 Hikari is honest about what it covers:
 
-- **Detects** issues on any web app that can be built and served: axe and Playwright test the rendered page, whatever the stack.
+- **Detects** issues on any web app that can be built and served: axe and Playwright test the rendered page, whatever the stack. The workflow serves Next.js and Vite apps.
+- **Audits** `/` and the pages a PR changed (Next.js app router); dynamic routes such as `/blog/[slug]` are skipped.
 - **Fixes** source code of React + TypeScript + Tailwind apps.
 - **Typical rules:** `image-alt`, `button-name`, `color-contrast`, `heading-order`, `label`, `html-has-lang`.
 - **Does not cover** pages behind a login, deep UI states, native apps, or backend-only repositories.

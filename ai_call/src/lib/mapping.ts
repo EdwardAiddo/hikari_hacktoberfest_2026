@@ -329,6 +329,44 @@ export function locateNode(node: { html: string; target: string[] }, files: Sour
   return { file: best[0], score: best[1].score, matched: best[1].matched, related: relatedCss(best[0], tokens, files) };
 }
 
+/**
+ * Rules about the whole page (a missing h1, landmarks) point at <html> or
+ * <body>, which a framework layout renders. When no changed file contains
+ * that element, the fix belongs in the page component for the audited URL.
+ */
+export function isPageLevel(node: { html: string; target: string[] }): boolean {
+  const tag = parseRootTag(node.html)?.tag;
+  const target = node.target.join(" ").trim();
+  return target === "html" || target === "body" || tag === "html" || tag === "body";
+}
+
+/** URL path of a Next.js page file (app router or pages router), or null. */
+export function routeOfPageFile(rel: string): string | null {
+  const app = /(?:^|\/)(?:src\/)?app\/(?:(.*)\/)?page\.(?:tsx|jsx|ts|js|mdx)$/.exec(rel);
+  if (app) {
+    const segments = (app[1] ?? "").split("/").filter((s) => s && !/^\(.+\)$/.test(s) && !s.startsWith("@"));
+    return `/${segments.join("/")}`;
+  }
+  const pages = /(?:^|\/)(?:src\/)?pages\/(.+)\.(?:tsx|jsx|ts|js|mdx)$/.exec(rel);
+  if (pages && !/(^|\/)_(app|document|error)$/.test(pages[1]!) && !pages[1]!.startsWith("api/")) {
+    return `/${pages[1]!.replace(/(^|\/)index$/, "")}`.replace(/\/$/, "") || "/";
+  }
+  return null;
+}
+
+/** The changed page component that renders `url`, for page-level violations. */
+export function locateByRoute(url: string | undefined, files: SourceFile[]): SourceFile | null {
+  if (!url) return null;
+  let path: string;
+  try {
+    path = new URL(url).pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return null;
+  }
+  const matches = files.filter((f) => isMarkup(f.path) && routeOfPageFile(f.rel) === path);
+  return matches.length === 1 ? matches[0]! : null;
+}
+
 /** CSS candidates that style the node's classes or ids, or that `file` imports. */
 export function relatedCss(file: SourceFile, tokens: Token[], files: SourceFile[]): SourceFile[] {
   const css = files.filter((f) => extname(f.path) === ".css");

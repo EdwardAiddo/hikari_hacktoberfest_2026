@@ -249,4 +249,55 @@ describe("runRound", () => {
     const { input } = await setup([imageAlt, { ...imageAlt, url: "http://localhost:4173/other" }], { client });
     expect((await runRound(input)).records).toHaveLength(1);
   });
+
+  test("a page-level rule on <html> goes to the changed page component for its URL", async () => {
+    const heading: Violation = {
+      ruleId: "page-has-heading-one",
+      impact: "moderate",
+      help: "Page should contain a level-one heading",
+      helpUrl: "",
+      nodes: [
+        {
+          target: ["html"],
+          html: '<html lang="en" class="font-x">',
+          failureSummary: "no h1",
+          fingerprint: "page-has-heading-one|html",
+          url: "http://localhost:4173/demo",
+        },
+      ],
+    };
+    const dir = await mkdtemp(join(tmpdir(), "curbfix-route-"));
+    const page: SourceFile = {
+      path: join(dir, "page.tsx"),
+      rel: "website/src/app/demo/page.tsx",
+      content: `export default function Demo() {\n  return <div className="title">The character for light</div>;\n}\n`,
+    };
+    await writeFile(page.path, page.content);
+    const edit: Edit = {
+      file: page.rel,
+      oldStr: '<div className="title">The character for light</div>',
+      newStr: '<h1 className="title">The character for light</h1>',
+      ruleId: "page-has-heading-one",
+      violationId: "v1",
+      rationale: "The page title becomes the h1.",
+    };
+    const client = new FakeLlmClient([call([edit])]);
+    const { input } = await setup([heading], { client, candidates: [page] });
+    const out = await runRound(input);
+    expect(out.records[0]).toMatchObject({ status: "applied", file: "website/src/app/demo/page.tsx" });
+    expect(client.requests[0]?.user).toContain("This rule is about the whole page at http://localhost:4173/demo");
+    expect(await readFile(page.path, "utf8")).toContain("<h1");
+  });
+
+  test("a page-level rule with no matching page stays out of scope", async () => {
+    const heading: Violation = {
+      ruleId: "page-has-heading-one",
+      impact: "moderate",
+      help: "h",
+      helpUrl: "",
+      nodes: [{ target: ["html"], html: "<html>", failureSummary: "", fingerprint: "p|html", url: "http://localhost:4173/elsewhere" }],
+    };
+    const { input } = await setup([heading]);
+    expect((await runRound(input)).records[0]).toMatchObject({ status: "out_of_scope" });
+  });
 });

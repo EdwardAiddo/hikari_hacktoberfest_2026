@@ -58,6 +58,8 @@ export interface PromptViolation {
   failureSummary: string;
   /** axe check data; for color-contrast: fgColor, bgColor, contrastRatio, expectedContrastRatio. */
   data?: Record<string, unknown>;
+  /** Set for page-level rules mapped to the page component that renders this URL. */
+  pageUrl?: string;
   attempts: Attempt[];
 }
 
@@ -79,6 +81,14 @@ function renderViolation(v: PromptViolation, nonce: string): string {
     "",
     "Element selector, rendered HTML and axe failure summary:",
     "",
+    ...(v.pageUrl
+      ? [
+          `This rule is about the whole page at ${v.pageUrl}. Its <html> element comes from a layout that this ` +
+            "pull request did not change, so fix it inside the page component below (for example, make the " +
+            "page's main title a real heading element).",
+          "",
+        ]
+      : []),
     dataBlock(
       nonce,
       "element",
