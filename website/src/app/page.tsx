@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { Hero } from "@/components/Hero";
 import { VideoSection } from "@/components/VideoSection";
 
@@ -22,6 +23,12 @@ export default function Home() {
       <p className="animate-enter absolute top-6 left-6 z-10 font-inter text-sm font-bold tracking-wide text-muted-foreground">
         Hacktoberfest 2026
       </p>
+      <Link
+        href="/demo"
+        className="animate-enter absolute top-6 right-6 z-20 inline-flex min-h-10 items-center rounded-full bg-black px-5 py-2 font-inter text-sm text-white transition-transform duration-150 ease-out motion-safe:active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+      >
+        Demo
+      </Link>
       <main className="relative z-10 flex flex-1 flex-col items-center gap-16 px-6 pt-28 pb-24">
         <Hero />
         <div className="video-reveal flex w-full justify-center">
