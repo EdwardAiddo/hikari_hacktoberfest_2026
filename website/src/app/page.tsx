@@ -25,7 +25,7 @@ export default function Home() {
       <main className="relative z-10 flex flex-1 flex-col items-center gap-16 px-6 pt-28 pb-24">
         <Hero />
         <div className="video-reveal flex w-full justify-center">
-          <VideoSection />
+          <VideoSection bunnyEmbedUrl={process.env.NEXT_PUBLIC_BUNNY_EMBED_URL} />
         </div>
       </main>
     </div>

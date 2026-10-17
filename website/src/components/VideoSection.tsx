@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from "motion/react";
 
-export function VideoSection() {
+export function VideoSection({ bunnyEmbedUrl }: { bunnyEmbedUrl?: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const reduceMotion = useReducedMotion();
   const id = useId();
@@ -69,13 +69,31 @@ export function VideoSection() {
         <motion.div
           layout
           id={playerId}
-          className="relative grid aspect-video w-full place-items-center overflow-hidden bg-foreground p-6 text-background shadow-[0_0_0_1px_rgba(0,0,0,0.1)]"
+          className="relative aspect-video w-full overflow-hidden bg-foreground text-background shadow-[0_0_0_1px_rgba(0,0,0,0.1)]"
           style={{ borderRadius: 16 }}
         >
-          {/* Replace the placeholder with the Bunny iframe when available. */}
-          <motion.p layout="position" className="text-center text-sm text-background/70">
-            Video coming soon
-          </motion.p>
+          {bunnyEmbedUrl ? (
+            <iframe
+              src={bunnyEmbedUrl}
+              title="Hikari — accessibility fixes that prove themselves"
+              loading="lazy"
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+              allowFullScreen
+              className="absolute inset-0 h-full w-full border-0"
+            />
+          ) : (
+            <video
+              controls
+              playsInline
+              preload="metadata"
+              poster="/videos/hikari-promo-poster.jpg"
+              aria-label="Hikari promotional video"
+              className="absolute inset-0 h-full w-full object-contain"
+            >
+              <source src="/videos/hikari-promo.mp4" type="video/mp4" />
+              Your browser does not support video playback.
+            </video>
+          )}
         </motion.div>
       </motion.section>
     </MotionConfig>
