@@ -1,12 +1,27 @@
+import Image from "next/image";
 import { Hero } from "@/components/Hero";
 
 export default function Home() {
   return (
-    <div className="relative flex min-h-dvh flex-1 flex-col bg-background text-foreground">
-      <p className="absolute top-6 left-6 font-inter text-sm font-medium tracking-wide text-muted-foreground uppercase">
+    <div className="relative flex min-h-dvh flex-1 flex-col overflow-hidden bg-background text-foreground">
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-0 flex justify-center"
+        aria-hidden="true"
+      >
+        <Image
+          src="/img/kanji_ascii.svg"
+          alt=""
+          width={1768}
+          height={1750}
+          unoptimized
+          loading="eager"
+          className="ascii-mark h-[110vh] w-auto max-w-none"
+        />
+      </div>
+      <p className="animate-enter absolute top-6 left-6 z-10 font-inter text-sm font-bold tracking-wide text-muted-foreground">
         Hacktoberfest 2026
       </p>
-      <main className="flex flex-1 items-center justify-center px-6">
+      <main className="relative z-10 flex flex-1 justify-center px-6 pt-28">
         <Hero />
       </main>
     </div>
