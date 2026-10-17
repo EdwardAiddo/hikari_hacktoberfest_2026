@@ -2,7 +2,7 @@ name: curbfix
 
 # Runs on every pull request that targets main.
 #
-#   Tool 1  src/detect.ts   Playwright + axe-core  -> finds the violations
+#   Tool 1  tool1/src/detect.ts  Playwright + axe-core  -> finds the violations
 #   Tool 2  src/fix.ts      Gemma 4                -> receives them, rewrites the files
 #   (loop)  back to Tool 1 until it reports nothing left to fix (or MAX_ITERATIONS)
 #   Tool 3  src/comment.ts  GitHub API             -> posts the before/after on the PR
@@ -47,11 +47,12 @@ jobs:
                   node-version: 22
                   cache: npm
                   cache-dependency-path: |
-                      package-lock.json
+                      tool1/package-lock.json
                       ${{ env.APP_DIR }}/package-lock.json
 
-            - name: Install bot dependencies
+            - name: Install Tool 1 dependencies
               run: npm ci
+              working-directory: tool1
 
             - name: Install app dependencies
               run: npm ci
@@ -59,6 +60,7 @@ jobs:
 
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
+              working-directory: tool1
 
             # ---------------------------------------------------------------
             # The loop. Contract between the tools:
@@ -86,11 +88,11 @@ jobs:
                     (cd "$APP_DIR" && npx vite preview --port "$APP_PORT" --strictPort) \
                       > "$OUT_DIR/preview.log" 2>&1 &
                     local server=$!
-                    npx wait-on "http://localhost:$APP_PORT" --timeout 30000 || { kill $server; return 1; }
-                    npx tsx src/detect.ts \
+                    (cd tool1 && npx wait-on "http://localhost:$APP_PORT" --timeout 30000) || { kill $server; return 1; }
+                    (cd tool1 && npx tsx src/detect.ts \
                       --url "http://localhost:$APP_PORT" \
-                      --out "$OUT_DIR/violations.json" \
-                      --screenshot "$OUT_DIR/$label.png"
+                      --out "$GITHUB_WORKSPACE/$OUT_DIR/violations.json" \
+                      --screenshot "$GITHUB_WORKSPACE/$OUT_DIR/$label.png")
                     local code=$?
                     kill $server 2>/dev/null
                     wait $server 2>/dev/null
