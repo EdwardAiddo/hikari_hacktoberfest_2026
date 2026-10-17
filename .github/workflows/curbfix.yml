@@ -5,7 +5,7 @@ name: curbfix
 #   Tool 1  src/detect.ts   Playwright + axe-core  -> finds the violations
 #   Tool 2  src/fix.ts      Gemma 4                -> receives them, rewrites the files
 #   (loop)  back to Tool 1 until it reports nothing left to fix (or MAX_ITERATIONS)
-#   Tool 3  src/comment.ts  GitHub API             -> posts the before/after on the PR
+#   Tool 3  Comment/src/comment.ts GitHub API             -> posts the before/after on the PR
 on:
     pull_request:
         branches: [main]
@@ -48,6 +48,7 @@ jobs:
                   cache: npm
                   cache-dependency-path: |
                       package-lock.json
+                      Comment/package-lock.json
                       ${{ env.APP_DIR }}/package-lock.json
 
             - name: Install bot dependencies
@@ -56,6 +57,10 @@ jobs:
             - name: Install app dependencies
               run: npm ci
               working-directory: ${{ env.APP_DIR }}
+
+            - name: Install Comment dependencies
+              run: npm ci
+              working-directory: Comment
 
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
@@ -138,9 +143,10 @@ jobs:
             # Tool 3: always runs, so the PR gets a comment even when the loop gave up.
             - name: Post / update PR comment
               if: always() && steps.loop.outcome != 'skipped'
+              working-directory: Comment
               run: >-
                   npx tsx src/comment.ts
-                  --dir "$OUT_DIR"
+                  --dir "$GITHUB_WORKSPACE/$OUT_DIR"
                   --status "${{ steps.loop.outputs.status || 'error' }}"
                   --pr "${{ github.event.pull_request.number }}"
               env:
