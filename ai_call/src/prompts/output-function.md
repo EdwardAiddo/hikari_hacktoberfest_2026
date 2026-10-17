@@ -1,0 +1,1 @@
+Call the `propose_edits` function exactly once. Put every edit in `edits`, setting `violationId` to the id of the violation it fixes (for example `v1`). Put every violation you do not fix in `skipped` with a reason. If you fix nothing, call it with an empty `edits` list.
