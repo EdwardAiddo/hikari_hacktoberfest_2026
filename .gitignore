@@ -3,7 +3,5 @@ node_modules/
 .env.*
 !.env.example
 curbfix-out/
-*.png
-!docs/**/*.png
 dist/
 .DS_Store
