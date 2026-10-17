@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   extractTokens,
@@ -154,5 +156,85 @@ describe("locateNode", () => {
     const result = locateNode({ html: `<div class="unrelated">x</div>`, target: [".unrelated"] }, [otherCss]);
     expect(result.file).toBeNull();
     expect(!result.file && result.reason).toBe("no markup files changed in this PR");
+  });
+});
+
+// Real axe-core 4.14 snippets from a live run against the TanStack a11y-devtools example.
+describe("locateNode on the TanStack a11y example", () => {
+  const app = file(
+    "app/src/App.tsx",
+    readFileSync(join(import.meta.dirname, "fixtures", "tanstack-a11y-App.tsx"), "utf8"),
+  );
+  const index = file(
+    "app/src/index.tsx",
+    `import App from './App'\ncreateRoot(document.getElementById('root')!).render(<App />)\n`,
+  );
+  const files = [app, index];
+
+  test.each([
+    ["button-name", "section:nth-child(3) > div:nth-child(3) > button", `<button style="width: 40px; height: 40px; font-size: 20px;"><span aria-hidden="true">×</span></button>`],
+    ["color-contrast", "div:nth-child(5) > p", `<p style="color: rgb(170, 170, 170); background-color: rgb(255, 255, 255);">This text has poor color contrast and may be hard to read.</p>`],
+    ["color-contrast", "div:nth-child(7) > div", `<div style="padding: 12px 24px; background-color: rgb(14, 165, 233); color: white; border-radius: 4px; display: inline-block; cursor: pointer;">Click me (not a button!)</div>`],
+    ["image-alt", 'img[width="24"]', `<img width="24" height="24" src="https://via.placeholder.com/24">`],
+    ["image-alt", 'section:nth-child(3) > div:nth-child(2) > img[width="150"][height="150"]', `<img width="150" height="150" src="https://via.placeholder.com/150" style="border: 1px solid rgb(204, 204, 204);">`],
+    ["link-name", "a", `<a href="https://example.com" style="display: inline-block;"><img width="24" height="24" src="https://via.placeholder.com/24"></a>`],
+    ["select-name", "select", `<select style="padding: 8px;"><option>Option 1</option><option>Option 2</option><option>Option 3</option></select>`],
+  ])("%s %s", (_rule, target, html) => {
+    expect(locateNode({ html, target: [target] }, files).file?.rel).toBe("app/src/App.tsx");
+  });
+});
+
+describe("weak tokens", () => {
+  test("matches inline styles across React and HTML spellings, rgb() as hex", () => {
+    const tokens = extractTokens({ html: `<p style="background-color: rgb(14, 165, 233); width: 40px">x</p>`, target: ["p"] });
+    const style = tokens.filter((t) => t.kind === "style");
+    expect(style.map((t) => t.value)).toEqual(["background-color: rgb(14, 165, 233)", "width: 40px"]);
+    expect(style[0]!.test(`style={{ backgroundColor: '#0ea5e9' }}`)).toBe(true);
+    expect(style[0]!.test(`style="background-color:#0EA5E9"`)).toBe(true);
+    expect(style[0]!.test(`style={{ color: '#0ea5e9' }}`)).toBe(false);
+    expect(style[1]!.test(`style={{ width: 40 }}`)).toBe(true);
+    expect(style[1]!.test(`style={{ width: 400 }}`)).toBe(false);
+  });
+
+  test("rgb() inside a compound value accepts the short hex form", () => {
+    const [border] = extractTokens({ html: `<img style="border: 1px solid rgb(204, 204, 204)">`, target: ["img"] }).filter(
+      (t) => t.kind === "style",
+    );
+    expect(border!.test(`border: '1px solid #ccc'`)).toBe(true);
+  });
+
+  test("size attributes match quoted and JSX forms only", () => {
+    const [width] = extractTokens({ html: `<img width="24">`, target: ['img[width="24"]'] }).filter((t) => t.value === "width=24");
+    expect(width!.test(`<img width={24} />`)).toBe(true);
+    expect(width!.test(`<img width="24">`)).toBe(true);
+    expect(width!.test(`<img width={240} />`)).toBe(false);
+    expect(width!.test(`const width = 24`)).toBe(false);
+  });
+
+  test("Vite-hashed asset names map back to the imported file name", () => {
+    const tokens = extractTokens({ html: `<img src="/assets/hero-banner-BdF3x9Qa.png">`, target: ["img"] });
+    const asset = tokens.find((t) => t.value === "hero-banner.png");
+    expect(asset?.test(`import heroBanner from './assets/hero-banner.png'`)).toBe(true);
+  });
+
+  test("data: URIs are not used as tokens", () => {
+    const tokens = extractTokens({ html: `<img src="data:image/png;base64,AAAA">`, target: ["img"] });
+    expect(tokens.filter((t) => t.kind === "asset")).toEqual([]);
+  });
+
+  test("a short symbol counts as text, with its HTML entity", () => {
+    const [symbol] = extractTokens({ html: `<button><span aria-hidden="true">×</span></button>`, target: ["button"] }).filter(
+      (t) => t.kind === "text",
+    );
+    expect(symbol?.value).toBe("×");
+    expect(symbol!.test("<span>&times;</span>")).toBe(true);
+  });
+
+  test("a single generic style declaration is not enough to locate an element", () => {
+    const result = locateNode(
+      { html: `<div style="display: inline-block;"></div>`, target: ["footer > div"] },
+      [file("app/src/A.tsx", `export const A = () => <span style={{ display: 'inline-block' }} />;\n`)],
+    );
+    expect(result.file).toBeNull();
   });
 });

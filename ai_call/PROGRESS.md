@@ -50,7 +50,7 @@ SDK facts verified in the installed types:
 - [x] **M7 Prompts** (`src/prompts/*.md`, `src/lib/prompts.ts`): templates, nonce delimiters against prompt injection.
 - [x] **M8 Orchestration + CLI** (`src/lib/fixer.ts`, `src/fix.ts`): round logic, fixes-N.json, out-of-scope merge, log groups, step summary, exit codes.
 - [x] **M9 End-to-end check** (`test/e2e.test.ts`): real CLI + real SDK against a local HTTP stub of the Gemini API (`GOOGLE_GEMINI_BASE_URL`, read natively by the SDK). Covers success, HTTP 400 → exit 1, bad config → exit 1.
-- [ ] **M10 Live smoke test** (needs a real `GEMINI_API_KEY` in `.env`): confirm Gemma 4 accepts `systemInstruction`, `thinkingLevel` and function calling together; compare `gemma-4-31b-it` and `gemma-4-26b-a4b-it`, and `high` vs `minimal` thinking, on demo-app fixtures once they exist.
+- [~] **M10 Live test**. First live run done 2026-10-17 (see "Live test results"). Still open: compare `gemma-4-31b-it` vs `gemma-4-26b-a4b-it`, and `high` vs `minimal` thinking.
 
 ## Design notes (keep in sync with code)
 
@@ -69,7 +69,11 @@ SDK facts verified in the installed types:
   allowlist. Symlinks are resolved and re-checked.
 - **Mapping** (`src/lib/mapping.ts`): tokens from root tag attrs, target selector
   and visible text; weights id 10, data-testid 8, text/alt/aria-label/placeholder 6,
-  class 3, role 1, `<html>/<head>/<body>/<title>` 5. A token found in n markup files
+  class 3, role 1, `<html>/<head>/<body>/<title>` 5. Weak tokens (added after the
+  first live run): `src`/`poster` exact value 4, de-hashed asset file name 3,
+  non-ASCII symbol text up to 3 chars 2 (also matched as entity / `\u` escape),
+  each inline style declaration 1.5 (kebab or camelCase prop, `rgb()` also as
+  `#rrggbb`/`#rgb`, `Npx` also as bare `N`), `width`/`height` 1 (quoted or `{N}`). A token found in n markup files
   adds weight/n to each. Winner needs score >= 3 (`MIN_SCORE`). CSS files never
   locate an element; they are attached as `related` when they style a class/id of
   the node or are imported by the winning file.
@@ -121,6 +125,38 @@ SDK facts verified in the installed types:
   fatal stop), merges `out-of-scope.json`, prints the round diff in `::group::`,
   appends a summary to `$GITHUB_STEP_SUMMARY`. Exit 0, or 1 on fatal/config errors.
 
+## Live test results (2026-10-17)
+
+Target: TanStack `examples/react/a11y-devtools` (React 19 + Vite, commit 6fbe63f of
+TanStack/devtools) copied into a scratch repo as a one-commit "PR". Audit by a throwaway
+Playwright + @axe-core/playwright 4.14.0 script (stand-in for detect.ts, same tags and
+fingerprint scheme). Model `gemma-4-31b-it`, thinking `minimal`, function calling.
+
+- Gemma 4 31B accepted `systemInstruction` + `thinkingLevel: MINIMAL` + forced
+  `propose_edits` function calling in one request. No inline-system fallback, no repair.
+- Before: 7 nodes (button-name, 2x color-contrast, 2x image-alt, link-name, select-name).
+- Round 1: 1 call, ~20 s. 4 applied, 3 out_of_scope. Re-audit: 3 of 4 fixed; one
+  contrast fix (white on #0284c7) still failed although the model claimed 4.59:1.
+- Round 2: 1 call; history told the model the previous colour; #0277b3 passed.
+- After: 3 nodes left, all out_of_scope with "no distinctive tokens": `<img>` with only
+  src/width/height (src shared with an accessible image), and a button whose only text
+  is `×` inside aria-hidden.
+- Lesson: model-reported contrast ratios are unreliable; the re-audit loop is what
+  catches it. Consider computing contrast for proposed colours locally.
+- Mapping gap: elements with no id/class/text (3 of 7) were out of scope. Fixed
+  the same day with weak tokens (see Mapping above).
+
+Second live run (same day, after the mapping change, fresh outputs):
+- Round 1: 1 call, all 7 nodes located in `app/src/App.tsx`, 7 applied.
+  Re-audit: 1 left (the same blue-background contrast; model again chose #0284c7).
+- Round 2: 1 call, #0277bd. Re-audit: 0 nodes. 7 → 0 in 2 rounds, 2 LLM calls.
+- Edit quality notes: `alt="Placeholder"` is weak but honest for a placeholder
+  image; `aria-label="Close"` on the × button is a guess; the icon link got both
+  `aria-label` and `alt` (redundant); the button tag was split over 3 lines with
+  trailing spaces, which brushes against "no reformatting". Worth a prompt tweak.
+- Still not built: context from the surrounding DOM (nearest heading) would need
+  detect.ts to emit it, i.e. a schema change.
+
 ## Open questions / follow-ups
 
 - **detect.ts must emit the schema in `src/lib/schema.ts`** (target flattened to
@@ -136,10 +172,11 @@ SDK facts verified in the installed types:
   Confirm which one is intended.
 - **Default thinking level** is `minimal` until measured.
 - **`scripts/local-run.sh`** is not written: it needs detect.ts. Write it with detect.
-- Not committed yet: everything is untracked on branch `ai_component`.
 
 ## Log
 
 - 2026-10-17: Plan written. Deps installed. M0-M3 done, 35 tests green.
 - 2026-10-17: M4-M6 done, 87 tests green.
 - 2026-10-17: M7-M9 done. `npx tsc --noEmit` clean, `npm test` 111 tests green. Next: M10 (needs API key).
+- 2026-10-17: First live run against Gemma 4 31B: all 5 mappable violations fixed in 2 rounds; 3 left out of scope by the mapping heuristic.
+- 2026-10-17: Weak mapping tokens added (src, asset name, symbols, inline styles, width/height); 125 tests green. Second live run: 7 → 0 violations in 2 rounds.

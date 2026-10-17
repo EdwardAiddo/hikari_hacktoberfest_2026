@@ -31,10 +31,13 @@ Each run of `fix.ts` is one **round**. It reads the latest audit, edits the work
    | `data-testid` | 8 |
    | visible text, `alt`, `aria-label`, `placeholder` | 6 |
    | `<html>`, `<head>`, `<body>`, `<title>` | 5 |
-   | class name | 3 |
-   | `role` | 1 |
+   | image/media `src` (exact value) | 4 |
+   | class name; asset file name behind a bundler hash (`/assets/logo-BdF3x9Qa.png` → `logo.png`) | 3 |
+   | short symbol text such as `×` or `→` (also as `&times;`) | 2 |
+   | each inline style declaration (`font-size: 20px` matches `fontSize: '20px'`, `rgb(204, 204, 204)` matches `#ccc`) | 1.5 |
+   | `role`, `width`, `height` | 1 |
 
-   A token found in *n* files adds *weight / n* to each of them, so tokens shared by many files count for little. The best-scoring file wins if it reaches 3 points. Only markup files can win. CSS files that style the element, or that the winning file imports, come along as extra editable files, so colour-contrast fixes can land in the stylesheet.
+   A token found in *n* files adds *weight / n* to each of them, so tokens shared by many files count for little. The best-scoring file wins if it reaches 3 points. The weaker tokens (2 points or less) let curbfix find elements with no id, class or text, such as an icon button or a bare `<img>`, but only when several of them agree. Only markup files can win. CSS files that style the element, or that the winning file imports, come along as extra editable files, so colour-contrast fixes can land in the stylesheet.
 
    An element that can't be found in a candidate file is **out of scope**: it lives in code this PR didn't touch, so fixing it is not this PR's job.
 
